@@ -5,8 +5,11 @@ import {
   Autocomplete,
   Box,
   Button,
+  Chip,
   CircularProgress,
+  Divider,
   Grid,
+  LinearProgress,
   Paper,
   Stack,
   Step,
@@ -14,8 +17,6 @@ import {
   Stepper,
   TextField,
   Typography,
-  Chip,
-  Divider,
 } from '@mui/material';
 import { useForm, Controller } from 'react-hook-form';
 import { styled } from '@mui/material/styles';
@@ -61,6 +62,7 @@ const SubmitExpense = ({
       amount: '',
       currency: baseCurrency,
       category: '',
+      vendor: '',
       description: '',
       expenseDate: new Date().toISOString().slice(0, 10),
       receiptFile: null,
@@ -71,7 +73,12 @@ const SubmitExpense = ({
 
   const [activeStep, setActiveStep] = useState(0);
   const [receiptPreview, setReceiptPreview] = useState(null);
+  const [processedReceipt, setProcessedReceipt] = useState(null);
+  const [preprocessState, setPreprocessState] = useState({ status: 'idle', error: null });
   const [ocrState, setOcrState] = useState({ status: 'idle', text: '', error: null });
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [extractedFields, setExtractedFields] = useState({ amount: null, date: null, vendor: '' });
+  const [manualOverride, setManualOverride] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const hasProcessedOCRRef = useRef(false);
 
@@ -120,23 +127,105 @@ const SubmitExpense = ({
   const resetStepper = () => {
     setActiveStep(0);
     setReceiptPreview(null);
+    if (processedReceipt?.url) URL.revokeObjectURL(processedReceipt.url);
+    setProcessedReceipt(null);
+    setPreprocessState({ status: 'idle', error: null });
     setOcrState({ status: 'idle', text: '', error: null });
+    setOcrProgress(0);
+    setExtractedFields({ amount: null, date: null, vendor: '' });
+    setManualOverride(false);
     hasProcessedOCRRef.current = false;
   };
 
-  const onDrop = useCallback((acceptedFiles) => {
+  const preprocessImage = useCallback(async (file) => {
+    if (!file.type.startsWith('image/')) {
+      return null;
+    }
+
+    const imageBitmap = await createImageBitmap(file);
+    const MAX_DIMENSION = 2000;
+    const scale = Math.min(1, MAX_DIMENSION / Math.max(imageBitmap.width, imageBitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(imageBitmap.width * scale);
+    canvas.height = Math.round(imageBitmap.height * scale);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(imageBitmap, 0, 0, canvas.width, canvas.height);
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const contrast = 40;
+    const factor = (259 * (contrast + 255)) / (255 * (259 - contrast));
+    let totalBrightness = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      totalBrightness += gray;
+      const contrasted = factor * (gray - 128) + 128;
+      const clamped = Math.max(0, Math.min(255, contrasted));
+      data[i] = clamped;
+      data[i + 1] = clamped;
+      data[i + 2] = clamped;
+    }
+
+    const avgBrightness = totalBrightness / (data.length / 4);
+    const adjustment = avgBrightness < 110 ? 1.1 : 0.95;
+
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = Math.max(0, Math.min(255, data[i] * adjustment));
+      data[i + 1] = Math.max(0, Math.min(255, data[i + 1] * adjustment));
+      data[i + 2] = Math.max(0, Math.min(255, data[i + 2] * adjustment));
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error('Unable to preprocess image'));
+          return;
+        }
+        const url = URL.createObjectURL(blob);
+        resolve({ blob, url });
+      }, 'image/png', 0.92);
+    });
+  }, []);
+
+  const onDrop = useCallback(async (acceptedFiles) => {
     if (!acceptedFiles.length) return;
     const file = acceptedFiles[0];
+    if (receiptPreview?.url) URL.revokeObjectURL(receiptPreview.url);
+    if (processedReceipt?.url) URL.revokeObjectURL(processedReceipt.url);
+
     setValue('receiptFile', file, { shouldValidate: true });
-    setReceiptPreview({
+    const preview = {
       name: file.name,
       size: file.size,
       type: file.type,
       url: URL.createObjectURL(file),
-    });
+    };
+    setReceiptPreview(preview);
+    setPreprocessState({ status: 'processing', error: null });
     setOcrState({ status: 'idle', text: '', error: null });
+    setManualOverride(false);
+    setExtractedFields({ amount: null, date: null, vendor: '' });
+    setOcrProgress(0);
     hasProcessedOCRRef.current = false;
-  }, [setValue]);
+
+    try {
+      const processed = await preprocessImage(file);
+      if (processed) {
+        setProcessedReceipt(processed);
+        setPreprocessState({ status: 'success', error: null });
+      } else {
+        setProcessedReceipt(null);
+        setPreprocessState({ status: 'skipped', error: null });
+      }
+    } catch (error) {
+      console.error('Preprocessing failed:', error);
+      setProcessedReceipt(null);
+      setPreprocessState({ status: 'error', error: 'Unable to preprocess image. The original will be used.' });
+    }
+  }, [preprocessImage, processedReceipt, receiptPreview, setValue]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -147,18 +236,74 @@ const SubmitExpense = ({
     },
   });
 
+  const extractFieldsFromText = useCallback((text) => {
+    if (!text) return { amount: null, date: null, vendor: '' };
+
+    const amountPattern = /(?:total|amount|grand\s*total|balance)\D{0,15}(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2})?)/i;
+    const amountMatch = text.match(amountPattern);
+    let amountValue = null;
+    if (amountMatch?.[1]) {
+      const normalized = amountMatch[1].replace(/,/g, '').replace(/\s/g, '');
+      amountValue = parseFloat(normalized);
+    }
+
+    const datePattern = /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/;
+    const dateMatch = text.match(datePattern);
+    let isoDate = null;
+    const parseDateString = (value) => {
+      if (!value) return null;
+      const parts = value.includes('-') ? value.split('-') : value.split('/');
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      }
+      const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+      return `${year}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+    };
+    if (dateMatch) {
+      isoDate = parseDateString(dateMatch[0].replaceAll('.', '-'));
+    }
+
+    const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+    const vendorLine = lines.find((line) => line.length > 2 && /[A-Za-z]/.test(line)) || '';
+
+    return {
+      amount: amountValue,
+      date: isoDate,
+      vendor: vendorLine,
+    };
+  }, []);
+
   useEffect(() => {
     if (activeStep !== 2) return;
-    if (!receiptPreview || hasProcessedOCRRef.current) return;
+    if (!receiptPreview || hasProcessedOCRRef.current || preprocessState.status === 'processing') return;
 
     const processOCR = async () => {
-      setOcrState({ status: 'processing', text: '', error: null });
+      setOcrState({ status: 'processing', text: '', error: null, warning: null });
+      setOcrProgress(0);
       try {
-        const { default: Tesseract } = await import('tesseract.js');
-        const result = await Tesseract.recognize(receiptPreview.url, 'eng');
-        const text = result?.data?.text || '';
-        setOcrState({ status: 'success', text, error: null });
+        const { createWorker } = await import('tesseract.js');
+        const worker = await createWorker({
+          logger: (m) => {
+            if (m.status === 'recognizing text') {
+              setOcrProgress(Math.round(m.progress * 100));
+            }
+          },
+        });
+
+        await worker.loadLanguage('eng');
+        await worker.initialize('eng');
+
+        const sourceUrl = processedReceipt?.url || receiptPreview.url;
+        const { data } = await worker.recognize(sourceUrl);
+        await worker.terminate();
+
+        const text = data?.text?.trim() || '';
+        const warning = data?.confidence < 60 ? 'Low confidence detected. Please verify the extracted details.' : null;
+
+        setOcrState({ status: 'success', text, error: null, warning });
         setValue('ocrText', text);
+        const fields = extractFieldsFromText(text);
+        setExtractedFields(fields);
         hasProcessedOCRRef.current = true;
       } catch (error) {
         console.error('OCR processing failed:', error);
@@ -167,7 +312,23 @@ const SubmitExpense = ({
     };
 
     processOCR();
-  }, [activeStep, receiptPreview, setValue]);
+  }, [activeStep, extractFieldsFromText, preprocessState.status, processedReceipt, receiptPreview, setValue]);
+
+  useEffect(() => {
+    if (!extractedFields) return;
+    const currentAmount = Number(getValues('amount')) || 0;
+    if (extractedFields.amount && currentAmount <= 0) {
+      setValue('amount', extractedFields.amount.toFixed(2), { shouldValidate: true });
+    }
+    const currentDate = getValues('expenseDate');
+    if (extractedFields.date && (!currentDate || currentDate === defaultValues.expenseDate)) {
+      setValue('expenseDate', extractedFields.date, { shouldValidate: true });
+    }
+    const currentVendor = getValues('vendor');
+    if (extractedFields.vendor && !currentVendor) {
+      setValue('vendor', extractedFields.vendor, { shouldValidate: true });
+    }
+  }, [defaultValues.expenseDate, extractedFields, getValues, setValue]);
 
   const handleRetryOCR = () => {
     hasProcessedOCRRef.current = false;
@@ -272,6 +433,20 @@ const SubmitExpense = ({
             </Grid>
             <Grid item xs={12} sm={6}>
               <Controller
+                name="vendor"
+                control={control}
+                render={({ field }) => (
+                  <TextField
+                    {...field}
+                    label="Vendor"
+                    fullWidth
+                    placeholder="Merchant name"
+                  />
+                )}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Controller
                 name="expenseDate"
                 control={control}
                 rules={{ required: 'Date is required' }}
@@ -341,16 +516,40 @@ const SubmitExpense = ({
                     <Typography variant="body2" color="text.secondary">
                       {(receiptPreview.size / 1024).toFixed(1)} KB · {receiptPreview.type}
                     </Typography>
+                    {preprocessState.status === 'processing' && (
+                      <Stack spacing={1} sx={{ mt: 1 }}>
+                        <LinearProgress />
+                        <Typography variant="caption" color="text.secondary">
+                          Enhancing image for better OCR...
+                        </Typography>
+                      </Stack>
+                    )}
+                    {preprocessState.status === 'error' && (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        {preprocessState.error}
+                      </Alert>
+                    )}
                   </Box>
                   <Button color="secondary" onClick={() => {
                     setReceiptPreview(null);
                     setValue('receiptFile', null, { shouldValidate: true });
                     setOcrState({ status: 'idle', text: '', error: null });
+                    if (processedReceipt?.url) URL.revokeObjectURL(processedReceipt.url);
+                    setProcessedReceipt(null);
+                    setPreprocessState({ status: 'idle', error: null });
                     hasProcessedOCRRef.current = false;
                   }}>
                     Remove
                   </Button>
                 </Stack>
+                {processedReceipt?.url && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="caption" color="text.secondary">
+                      Preview (processed for OCR):
+                    </Typography>
+                    <Box component="img" src={processedReceipt.url} alt="Processed receipt" sx={{ mt: 1, maxHeight: 220, borderRadius: 2, border: '1px solid', borderColor: 'divider' }} />
+                  </Box>
+                )}
               </Paper>
             )}
           </Stack>
@@ -368,10 +567,16 @@ const SubmitExpense = ({
                 <Typography variant="subtitle1">OCR status</Typography>
                 {ocrState.status === 'processing' && (
                   <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
-                    <CircularProgress />
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                      Reading receipt...
-                    </Typography>
+                    <Stack spacing={2} alignItems="center">
+                      <CircularProgress />
+                      <Typography variant="body2" color="text.secondary">
+                        Reading receipt...
+                      </Typography>
+                      <LinearProgress variant="determinate" value={ocrProgress} sx={{ width: '100%' }} />
+                      <Typography variant="caption" color="text.secondary">
+                        {ocrProgress}%
+                      </Typography>
+                    </Stack>
                   </Paper>
                 )}
 
@@ -379,7 +584,17 @@ const SubmitExpense = ({
                   <Alert
                     severity="error"
                     action={
-                      <Button color="inherit" size="small" onClick={handleRetryOCR} startIcon={<ReplayRoundedIcon />}>Retry</Button>
+                      <Stack direction="row" spacing={1}>
+                        <Button color="inherit" size="small" onClick={handleRetryOCR} startIcon={<ReplayRoundedIcon />}>
+                          Retry
+                        </Button>
+                        <Button color="inherit" size="small" onClick={() => {
+                          setManualOverride(true);
+                          setOcrState((prev) => ({ ...prev, status: 'manual' }));
+                        }}>
+                          Continue manually
+                        </Button>
+                      </Stack>
                     }
                   >
                     {ocrState.error}
@@ -407,7 +622,62 @@ const SubmitExpense = ({
                       minRows={6}
                       fullWidth
                     />
+                    {ocrState.warning && (
+                      <Alert severity="warning" sx={{ mt: 2 }}>
+                        {ocrState.warning}
+                      </Alert>
+                    )}
+                    <Stack spacing={2} sx={{ mt: 3 }}>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        Detected fields
+                      </Typography>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={4}>
+                          <TextField
+                            label="Amount"
+                            value={extractedFields.amount ?? ''}
+                            onChange={(event) => {
+                              const nextAmount = event.target.value;
+                              setExtractedFields((prev) => ({ ...prev, amount: Number(nextAmount) || null }));
+                              if (nextAmount) {
+                                setValue('amount', Number(nextAmount), { shouldValidate: true });
+                              }
+                            }}
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                          <TextField
+                            label="Date"
+                            value={extractedFields.date ?? ''}
+                            onChange={(event) => {
+                              const nextDate = event.target.value;
+                              setExtractedFields((prev) => ({ ...prev, date: nextDate }));
+                              if (nextDate) {
+                                setValue('expenseDate', nextDate, { shouldValidate: true });
+                              }
+                            }}
+                          />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                          <TextField
+                            label="Vendor"
+                            value={extractedFields.vendor ?? ''}
+                            onChange={(event) => {
+                              const nextVendor = event.target.value;
+                              setExtractedFields((prev) => ({ ...prev, vendor: nextVendor }));
+                              setValue('vendor', nextVendor, { shouldValidate: true });
+                            }}
+                          />
+                        </Grid>
+                      </Grid>
+                    </Stack>
                   </Paper>
+                )}
+
+                {ocrState.status === 'manual' && (
+                  <Alert severity="info">
+                    Manual override enabled. Please ensure all fields are filled out before submitting.
+                  </Alert>
                 )}
               </Stack>
             )}
@@ -432,6 +702,10 @@ const SubmitExpense = ({
               <Grid item xs={12} md={6}>
                 <Typography variant="subtitle2" color="text.secondary">Category</Typography>
                 <Chip label={values.category || 'N/A'} color="primary" />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" color="text.secondary">Vendor</Typography>
+                <Typography variant="body1">{values.vendor || 'Not provided'}</Typography>
               </Grid>
               <Grid item xs={12} md={6}>
                 <Typography variant="subtitle2" color="text.secondary">Date</Typography>
@@ -488,7 +762,7 @@ const SubmitExpense = ({
           <Button
             variant="contained"
             onClick={handleNext}
-            disabled={(activeStep === 2 && ocrState.status !== 'success') || (activeStep === 1 && !receiptPreview)}
+            disabled={(activeStep === 2 && ocrState.status !== 'success' && ocrState.status !== 'manual') || (activeStep === 1 && !receiptPreview)}
           >
             Continue
           </Button>
