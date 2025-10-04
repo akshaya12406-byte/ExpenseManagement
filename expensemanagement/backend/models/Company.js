@@ -44,6 +44,28 @@ const categorySchema = new mongoose.Schema(
   { _id: false },
 );
 
+const exchangeRateSchema = new mongoose.Schema(
+  {
+    code: { type: String, uppercase: true, required: true },
+    rate: { type: Number, required: true },
+    updatedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
+const companyProfileSchema = new mongoose.Schema(
+  {
+    legalName: String,
+    taxId: String,
+    address: String,
+    website: String,
+    contactEmail: String,
+    contactPhone: String,
+    logoUrl: String,
+  },
+  { _id: false },
+);
+
 const companySettingsSchema = new mongoose.Schema(
   {
     reimbursementPolicy: String,
@@ -56,14 +78,63 @@ const companySettingsSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const workflowSettingsSchema = new mongoose.Schema(
+  {
+    autoEscalateHours: { type: Number, default: 24 },
+    requireManagerApproval: { type: Boolean, default: true },
+    requireFinanceApproval: { type: Boolean, default: false },
+    allowCfoBypass: { type: Boolean, default: true },
+    notifyOnEscalation: { type: Boolean, default: true },
+  },
+  { _id: false },
+);
+
+const emailIntegrationSchema = new mongoose.Schema(
+  {
+    host: String,
+    port: Number,
+    username: String,
+    fromAddress: String,
+    secure: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
+
+const integrationSettingsSchema = new mongoose.Schema(
+  {
+    email: emailIntegrationSchema,
+    slackWebhookUrl: String,
+    webhookEndpoint: String,
+  },
+  { _id: false },
+);
+
+const backupSchema = new mongoose.Schema(
+  {
+    _id: { type: String, required: true },
+    createdAt: { type: Date, default: Date.now },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    snapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      required: true,
+    },
+  },
+  { _id: false },
+);
+
 const companySchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     currency: { type: String, required: true, default: 'USD' },
+    profile: companyProfileSchema,
     approvalRules: [approvalLevelSchema],
     budgetThresholds: [budgetThresholdSchema],
     categories: [categorySchema],
     settings: companySettingsSchema,
+    exchangeRates: [exchangeRateSchema],
+    workflowSettings: workflowSettingsSchema,
+    integrations: integrationSettingsSchema,
+    backups: [backupSchema],
   },
   {
     timestamps: true,
