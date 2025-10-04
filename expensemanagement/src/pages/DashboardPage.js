@@ -362,13 +362,15 @@ const DashboardPage = () => {
       labels: stats.trend.map((point) => point.label),
       datasets: [
         {
-          label: 'Spending',
+          id: 'spend-trend',
+          label: 'Spend',
           data: stats.trend.map((point) => point.amount),
           borderColor: theme.palette.primary.main,
           backgroundColor: theme.palette.primary.light,
-          tension: 0.3,
+          pointBackgroundColor: theme.palette.primary.main,
           fill: false,
           pointRadius: 4,
+          tension: 0.3,
         },
       ],
     }),
@@ -379,6 +381,10 @@ const DashboardPage = () => {
     () => ({
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: 'index',
+        intersect: false,
+      },
       plugins: {
         legend: {
           display: false,
@@ -393,6 +399,9 @@ const DashboardPage = () => {
         x: {
           ticks: {
             color: theme.palette.text.secondary,
+          },
+          grid: {
+            display: false,
           },
         },
         y: {
@@ -537,7 +546,13 @@ const DashboardPage = () => {
                     <CircularProgress />
                   </Box>
                 ) : (
-                  <Line ref={trendChartRef} data={spendingTrendData} options={spendingTrendOptions} redraw />
+                  <Line
+                    key={spendingTrendData.labels.join('|')}
+                    ref={trendChartRef}
+                    data={spendingTrendData}
+                    options={spendingTrendOptions}
+                    datasetIdKey="id"
+                  />
                 )}
               </Box>
             </Paper>
