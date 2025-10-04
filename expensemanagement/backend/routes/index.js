@@ -6,6 +6,7 @@ const expenseRoutes = require('./expenses');
 const userRoutes = require('./users');
 const companyRoutes = require('./company');
 const analyticsRoutes = require('./analytics');
+const currencyRoutes = require('./currency');
 
 const router = express.Router();
 
@@ -19,5 +20,6 @@ router.use('/expenses', expenseRoutes);
 router.use('/users', userRoutes);
 router.use('/company', companyRoutes);
 router.use('/analytics', analyticsRoutes);
+router.use('/currency', currencyRoutes);
 
 module.exports = router;

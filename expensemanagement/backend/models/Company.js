@@ -118,6 +118,10 @@ const backupSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed,
       required: true,
     },
+    exchangeRates: {
+      type: [exchangeRateSchema],
+      default: undefined,
+    },
   },
   { _id: false },
 );
