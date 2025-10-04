@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Box, CircularProgress } from '@mui/material';
 import { Navigate, useLocation } from 'react-router-dom';
 
 const STORAGE_KEY = 'expenseManagement.auth';
@@ -38,6 +39,9 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [company, setCompany] = useState(null);
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   useEffect(() => {
     const stored = readStoredAuth();
@@ -45,24 +49,41 @@ export const AuthProvider = ({ children }) => {
       setUser(stored.user ?? null);
       setToken(stored.token ?? null);
       setCompany(stored.company ?? null);
+      setExpiresAt(stored.expiresAt ?? null);
+      setSessionExpired(false);
     }
+    setIsInitializing(false);
   }, []);
 
-  useEffect(() => {
-    writeStoredAuth({ user, token, company });
-  }, [user, token, company]);
+  const login = useCallback(({ token: nextToken, user: nextUser, company: nextCompany, expiresAt: nextExpiresAt }) => {
+    if (!nextToken) {
+      setToken(null);
+      setUser(null);
+      setCompany(null);
+      setExpiresAt(null);
+      setSessionExpired(false);
+      return;
+    }
 
-  const login = useCallback(({ token: nextToken, user: nextUser, company: nextCompany }) => {
-    setToken(nextToken ?? null);
+    const expiryTimestamp = nextExpiresAt ?? Date.now() + 1000 * 60 * 60; // default 1h session
+    setToken(nextToken);
     setUser(nextUser ?? null);
     setCompany(nextCompany ?? null);
+    setExpiresAt(expiryTimestamp);
+    setSessionExpired(false);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback((options = {}) => {
     setToken(null);
     setUser(null);
     setCompany(null);
+    setExpiresAt(null);
+    setSessionExpired(options.reason === 'session_expired');
   }, []);
+
+  useEffect(() => {
+    writeStoredAuth({ user, token, company, expiresAt });
+  }, [user, token, company, expiresAt]);
 
   const isAuthenticated = Boolean(token);
 
@@ -86,19 +107,63 @@ export const AuthProvider = ({ children }) => {
     [user?.role],
   );
 
+  const isTokenExpired = useCallback(() => {
+    if (!token || !expiresAt) return false;
+    return Date.now() >= expiresAt;
+  }, [token, expiresAt]);
+
+  useEffect(() => {
+    if (!token || !expiresAt) return undefined;
+
+    const remaining = expiresAt - Date.now();
+    if (remaining <= 0) {
+      logout({ reason: 'session_expired' });
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      logout({ reason: 'session_expired' });
+    }, remaining);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [token, expiresAt, logout]);
+
+  useEffect(() => {
+    if (!isInitializing && isTokenExpired()) {
+      logout({ reason: 'session_expired' });
+    }
+  }, [isInitializing, isTokenExpired, logout]);
+
   const value = useMemo(
     () => ({
       user,
       token,
       company,
+      expiresAt,
       isAuthenticated,
+      isInitializing,
       login,
       logout,
       setCompany,
       hasRole,
       hasPermission,
+      isTokenExpired,
+      sessionExpired,
     }),
-    [company, hasPermission, hasRole, isAuthenticated, login, logout, token, user],
+    [
+      company,
+      expiresAt,
+      hasPermission,
+      hasRole,
+      isAuthenticated,
+      isInitializing,
+      isTokenExpired,
+      login,
+      logout,
+      sessionExpired,
+      token,
+      user,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -113,15 +178,34 @@ export const useAuth = () => {
 };
 
 export const ProtectedRoute = ({ children, roles, redirectTo = '/login' }) => {
-  const { isAuthenticated, user } = useAuth();
+  const { isAuthenticated, user, hasRole, isInitializing, sessionExpired } = useAuth();
   const location = useLocation();
 
-  if (!isAuthenticated) {
-    return <Navigate to={redirectTo} replace state={{ from: location }} />;
+  if (isInitializing) {
+    return (
+      <Box
+        sx={{
+          minHeight: '50vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
   }
 
-  if (roles && roles.length > 0 && (!user?.role || !roles.includes(user.role))) {
-    return <Navigate to="/dashboard" replace />;
+  if (!isAuthenticated) {
+    const state = { from: location };
+    if (sessionExpired) {
+      state.reason = 'session_expired';
+    }
+    return <Navigate to={redirectTo} replace state={state} />;
+  }
+
+  if (roles && roles.length > 0 && !hasRole(roles)) {
+    return <Navigate to="/dashboard" replace state={{ from: location, reason: 'forbidden' }} />;
   }
 
   return children;
