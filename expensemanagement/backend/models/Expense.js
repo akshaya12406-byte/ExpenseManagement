@@ -29,6 +29,21 @@ const conversionSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const receiptSchema = new mongoose.Schema(
+  {
+    _id: { type: String, required: true },
+    originalName: { type: String, required: true },
+    mimeType: { type: String, required: true },
+    size: { type: Number, required: true },
+    extension: { type: String, required: true },
+    storagePath: { type: String, required: true },
+    thumbnailPath: { type: String },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    uploadedAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const expenseSchema = new mongoose.Schema(
   {
     company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
@@ -55,6 +70,7 @@ const expenseSchema = new mongoose.Schema(
       type: Map,
       of: mongoose.Schema.Types.Mixed,
     },
+    receipts: [receiptSchema],
   },
   { timestamps: true },
 );
