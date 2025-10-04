@@ -5,6 +5,11 @@ const approvalStepSchema = new mongoose.Schema(
     level: { type: Number, required: true },
     approver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     role: { type: String },
+    parallelGroupId: { type: String },
+    requiredApprovals: { type: Number, default: 1 },
+    approvalsReceived: { type: Number, default: 0 },
+    approvers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    escalationAt: { type: Date },
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected', 'escalated'],
@@ -12,6 +17,7 @@ const approvalStepSchema = new mongoose.Schema(
     },
     decisionAt: { type: Date },
     decisionComment: { type: String },
+    autoApproved: { type: Boolean, default: false },
   },
   { _id: false },
 );
@@ -59,6 +65,22 @@ const expenseSchema = new mongoose.Schema(
       default: 'submitted',
     },
     approvalChain: [approvalStepSchema],
+    currentApprovalLevel: { type: Number, default: 0 },
+    approvalProgress: { type: Number, default: 0 },
+    escalationNotifiedAt: { type: Date },
+    workflowGraph: {
+      nodes: [{
+        id: { type: String },
+        label: { type: String },
+        status: { type: String },
+        metadata: { type: mongoose.Schema.Types.Mixed },
+      }],
+      edges: [{
+        from: { type: String },
+        to: { type: String },
+        type: { type: String },
+      }],
+    },
     submittedAt: { type: Date, default: Date.now },
     paidAt: { type: Date },
     merchant: { type: String },
