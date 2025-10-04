@@ -7,10 +7,10 @@ import {
   Box,
   Button,
   Chip,
+  CircularProgress,
   CssBaseline,
   Divider,
   Drawer,
-  Grid,
   IconButton,
   LinearProgress,
   List,
@@ -24,6 +24,7 @@ import {
   Typography,
   useMediaQuery,
 } from '@mui/material';
+import Grid from '@mui/material/Grid';
 import {
   DashboardCustomizeRounded,
   LogoutRounded,
@@ -252,7 +253,6 @@ const DashboardPage = () => {
             prev.monthTotal.convertedAmount + (Number(expense.convertedAmount) || Number(expense.amount) || 0),
         };
 
-        const trendLabels = prev.trend.map((point) => point.label);
         const todayLabel = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
         let trendUpdated = false;
         const trend = prev.trend.map((point) => {
@@ -284,7 +284,7 @@ const DashboardPage = () => {
     return () => {
       client.disconnect();
     };
-  }, []);
+  }, [loadDashboardSummary]);
 
   useEffect(() => {
     if (sessionExpired) {
@@ -458,8 +458,11 @@ const DashboardPage = () => {
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 Total expenses this month
               </Typography>
-              <Typography variant="h4" fontWeight={600}>
-                {formatCurrency(stats.monthTotal.amount, stats.monthTotal.currency)}
+              <Typography variant="h4" fontWeight={700}>
+                {new Intl.NumberFormat(undefined, {
+                  style: 'currency',
+                  currency: stats.monthTotal.currency,
+                }).format(stats.monthTotal.amount)}
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                 Converted: {formatCurrency(stats.monthTotal.convertedAmount, stats.monthTotal.convertedCurrency)} (rate {stats.monthTotal.rate.toFixed(2)})
@@ -473,7 +476,7 @@ const DashboardPage = () => {
                 <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                   Pending approvals
                 </Typography>
-                <Typography variant="h4" fontWeight={600}>
+                <Typography variant="h4" fontWeight={700}>
                   {stats.pendingApprovals}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -483,12 +486,12 @@ const DashboardPage = () => {
             </Grid>
           )}
 
-          <Grid item xs={12} md={4}>
+          <Grid xs={12} md={4}>
             <Paper sx={{ p: 3, height: '100%' }} elevation={3}>
               <Typography variant="subtitle2" color="text.secondary" gutterBottom>
                 Budget utilization
               </Typography>
-              <Typography variant="h4" fontWeight={600}>
+              <Typography variant="h4" fontWeight={700}>
                 {Math.round(stats.budgetUtilization)}%
               </Typography>
               <LinearProgress
@@ -506,16 +509,14 @@ const DashboardPage = () => {
             <Paper sx={{ p: 3, height: 360 }} elevation={3}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6" fontWeight={600}>
-                  Spending trends
+                  Spend trend
                 </Typography>
                 <Chip label="Last 7 days" size="small" />
               </Box>
               <Box sx={{ position: 'relative', height: '100%' }}>
                 {isLoadingStats ? (
-                  <Box sx={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Loading trends...
-                    </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+                    <CircularProgress />
                   </Box>
                 ) : (
                   <Line data={spendingTrendData} options={spendingTrendOptions} />
@@ -528,14 +529,19 @@ const DashboardPage = () => {
             <Paper sx={{ p: 3, height: 360, display: 'flex', flexDirection: 'column' }} elevation={3}>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6" fontWeight={600}>
-                  Recent expenses
+                  Recent submissions
                 </Typography>
                 <Chip label={`${stats.recentExpenses.length}`} size="small" color="primary" />
               </Box>
               <List sx={{ overflowY: 'auto', flexGrow: 1 }}>
                 {stats.recentExpenses.length === 0 ? (
-                  <ListItem>
-                    <ListItemText primary="No recent expenses" secondary="Your team's activity will appear here." />
+                  <ListItem divider disableGutters>
+                    <ListItemText
+                      primary="No recent expenses"
+                      secondary="Your team's activity will appear here."
+                      primaryTypographyProps={{ component: 'div' }}
+                      secondaryTypographyProps={{ component: 'div' }}
+                    />
                   </ListItem>
                 ) : (
                   stats.recentExpenses.map((expense) => (
@@ -559,6 +565,8 @@ const DashboardPage = () => {
                             <Chip label={expense.status} size="small" color="default" />
                           </Box>
                         }
+                        primaryTypographyProps={{ component: 'div' }}
+                        secondaryTypographyProps={{ component: 'div' }}
                       />
                     </ListItem>
                   ))

@@ -1,7 +1,7 @@
 import { Suspense, lazy } from 'react';
 import PropTypes from 'prop-types';
 import { ThemeProvider, CssBaseline, Container, CircularProgress } from '@mui/material';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import theme from './theme';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -40,6 +40,7 @@ function App() {
           >
             <Layout>
               <Routes>
+                <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
                 <Route path="/dashboard" element={<DashboardPage />} />

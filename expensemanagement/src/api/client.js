@@ -76,7 +76,9 @@ export const clearCache = (predicate) => {
   });
 };
 
-export default {
+const apiClient = {
   fetchJson,
   clearCache,
 };
+
+export default apiClient;
