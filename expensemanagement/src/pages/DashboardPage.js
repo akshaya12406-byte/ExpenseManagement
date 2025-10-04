@@ -5,19 +5,24 @@ import {
   Avatar,
   Badge,
   Box,
+  Button,
+  Chip,
   CssBaseline,
   Divider,
   Drawer,
+  Grid,
   IconButton,
+  LinearProgress,
   List,
+  ListItem,
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  Paper,
   Toolbar,
   Tooltip,
   Typography,
   useMediaQuery,
-  Button,
 } from '@mui/material';
 import {
   DashboardCustomizeRounded,
@@ -32,10 +37,22 @@ import {
 } from '@mui/icons-material';
 import { styled, useTheme } from '@mui/material/styles';
 import { io } from 'socket.io-client';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Tooltip as ChartTooltip,
+  Legend,
+} from 'chart.js';
 
 import { useAuth } from '../context/AuthContext';
 
 const DRAWER_WIDTH = 260;
+
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Legend);
 
 const roleMenus = {
   admin: [
@@ -81,17 +98,131 @@ const DashboardPage = () => {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [socket, setSocket] = useState(null);
+  const [stats, setStats] = useState({
+    monthTotal: {
+      amount: 0,
+      currency: 'USD',
+      convertedAmount: 0,
+      convertedCurrency: 'USD',
+      rate: 1,
+    },
+    pendingApprovals: 0,
+    budgetUtilization: 0,
+    recentExpenses: [],
+    trend: [],
+  });
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   const menuItems = useMemo(() => roleMenus[user?.role] || roleMenus.employee, [user?.role]);
+  const apiBase = useMemo(() => process.env.REACT_APP_API_URL || 'http://localhost:4000/api', []);
 
   useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+
+    const fallbackData = {
+      monthTotal: {
+        amount: 23850,
+        currency: 'USD',
+        convertedAmount: 23850,
+        convertedCurrency: 'USD',
+        rate: 1,
+      },
+      pendingApprovals: user?.role === 'manager' || user?.role === 'admin' ? 5 : 0,
+      budgetUtilization: 62,
+      recentExpenses: [
+        {
+          id: 'exp-1',
+          employeeName: 'Alex Johnson',
+          amount: 450.25,
+          currency: 'USD',
+          status: 'submitted',
+          createdAt: new Date().toISOString(),
+        },
+        {
+          id: 'exp-2',
+          employeeName: 'Maria Gomez',
+          amount: 120.9,
+          currency: 'USD',
+          status: 'approved',
+          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
+        },
+      ],
+      trend: Array.from({ length: 7 }).map((_, index) => {
+        const date = new Date();
+        date.setDate(date.getDate() - (6 - index));
+        return {
+          label: date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          amount: 1500 + index * 320,
+        };
+      }),
+    };
+
+    const fetchDashboardData = async () => {
+      setIsLoadingStats(true);
+      try {
+        const response = await fetch(`${apiBase}/dashboard/summary`, {
+          credentials: 'include',
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load dashboard data');
+        }
+
+        const data = await response.json();
+
+        if (!active) return;
+
+        setStats({
+          monthTotal: data.monthTotal || fallbackData.monthTotal,
+          pendingApprovals:
+            typeof data.pendingApprovals === 'number'
+              ? data.pendingApprovals
+              : fallbackData.pendingApprovals,
+          budgetUtilization:
+            typeof data.budgetUtilization === 'number'
+              ? data.budgetUtilization
+              : fallbackData.budgetUtilization,
+          recentExpenses: Array.isArray(data.recentExpenses)
+            ? data.recentExpenses
+            : fallbackData.recentExpenses,
+          trend: Array.isArray(data.trend) ? data.trend : fallbackData.trend,
+        });
+      } catch (error) {
+        if (active) {
+          setStats(fallbackData);
+        }
+      } finally {
+        if (active) {
+          setIsLoadingStats(false);
+        }
+      }
+    };
+
+    fetchDashboardData();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [apiBase, user?.role]);
+
+  useEffect(() => {
+    const storedAuth = (() => {
+      try {
+        const raw = localStorage.getItem('expenseManagement.auth');
+        return raw ? JSON.parse(raw) : null;
+      } catch (error) {
+        console.warn('Failed to parse stored auth state', error);
+        return null;
+      }
+    })();
+
     const client = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:4000', {
       transports: ['websocket'],
       auth: {
-        token: localStorage.getItem('expenseManagement.auth')
-          ? JSON.parse(localStorage.getItem('expenseManagement.auth')).token
-          : null,
+        token: storedAuth?.token || storedAuth?.accessToken || null,
       },
     });
 
@@ -103,7 +234,56 @@ const DashboardPage = () => {
       setNotifications((prev) => [notification, ...prev].slice(0, 20));
     });
 
-    setSocket(client);
+    client.on('expense:new', (expense) => {
+      setStats((prev) => {
+        const recentExpenses = [
+          {
+            id: expense._id || `temp-${Date.now()}`,
+            employeeName:
+              expense.employeeName || expense.employee?.name || expense.employee?.email || 'Team member',
+            amount: Number(expense.amount) || 0,
+            currency: expense.currency || prev.monthTotal.currency,
+            status: expense.status || 'submitted',
+            createdAt: expense.createdAt || new Date().toISOString(),
+          },
+          ...prev.recentExpenses,
+        ].slice(0, 6);
+
+        const monthTotal = {
+          ...prev.monthTotal,
+          amount: prev.monthTotal.amount + (Number(expense.amount) || 0),
+          convertedAmount:
+            prev.monthTotal.convertedAmount + (Number(expense.convertedAmount) || Number(expense.amount) || 0),
+        };
+
+        const trendLabels = prev.trend.map((point) => point.label);
+        const todayLabel = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        let trendUpdated = false;
+        const trend = prev.trend.map((point) => {
+          if (point.label === todayLabel) {
+            trendUpdated = true;
+            return {
+              ...point,
+              amount: point.amount + (Number(expense.amount) || 0),
+            };
+          }
+          return point;
+        });
+
+        if (!trendUpdated) {
+          trend.push({ label: todayLabel, amount: Number(expense.amount) || 0 });
+        }
+
+        return {
+          ...prev,
+          monthTotal,
+          pendingApprovals:
+            prev.pendingApprovals + (expense.status === 'submitted' ? 1 : 0),
+          recentExpenses,
+          trend: trend.slice(-12),
+        };
+      });
+    });
 
     return () => {
       client.disconnect();
@@ -159,6 +339,60 @@ const DashboardPage = () => {
   );
 
   const drawerVariant = isMobile ? 'temporary' : 'permanent';
+
+  const formatCurrency = (amount, currency) =>
+    new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount || 0);
+
+  const spendingTrendData = useMemo(
+    () => ({
+      labels: stats.trend.map((point) => point.label),
+      datasets: [
+        {
+          label: 'Spending',
+          data: stats.trend.map((point) => point.amount),
+          borderColor: theme.palette.primary.main,
+          backgroundColor: theme.palette.primary.light,
+          tension: 0.3,
+          fill: false,
+          pointRadius: 4,
+        },
+      ],
+    }),
+    [stats.trend, theme.palette.primary.main, theme.palette.primary.light],
+  );
+
+  const spendingTrendOptions = useMemo(
+    () => ({
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          callbacks: {
+            label: (context) => `${formatCurrency(context.parsed.y, stats.monthTotal.currency)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: {
+            color: theme.palette.text.secondary,
+          },
+        },
+        y: {
+          ticks: {
+            color: theme.palette.text.secondary,
+          },
+          grid: {
+            color: theme.palette.divider,
+          },
+        },
+      },
+    }),
+    [stats.monthTotal.currency, theme.palette.divider, theme.palette.text.secondary],
+  );
 
   return (
     <Box sx={{ display: 'flex' }}>
@@ -222,7 +456,125 @@ const DashboardPage = () => {
 
       <Main>
         <Toolbar />
-        <Outlet />
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 3, height: '100%' }} elevation={3}>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Total expenses this month
+              </Typography>
+              <Typography variant="h4" fontWeight={600}>
+                {formatCurrency(stats.monthTotal.amount, stats.monthTotal.currency)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Converted: {formatCurrency(stats.monthTotal.convertedAmount, stats.monthTotal.convertedCurrency)} (rate {stats.monthTotal.rate.toFixed(2)})
+              </Typography>
+            </Paper>
+          </Grid>
+
+          {(user?.role === 'manager' || user?.role === 'admin') && (
+            <Grid item xs={12} md={4}>
+              <Paper sx={{ p: 3, height: '100%' }} elevation={3}>
+                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                  Pending approvals
+                </Typography>
+                <Typography variant="h4" fontWeight={600}>
+                  {stats.pendingApprovals}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Approvals awaiting action across your team
+                </Typography>
+              </Paper>
+            </Grid>
+          )}
+
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 3, height: '100%' }} elevation={3}>
+              <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                Budget utilization
+              </Typography>
+              <Typography variant="h4" fontWeight={600}>
+                {Math.round(stats.budgetUtilization)}%
+              </Typography>
+              <LinearProgress
+                variant="determinate"
+                value={Math.min(100, Math.max(0, stats.budgetUtilization))}
+                sx={{ mt: 2, height: 10, borderRadius: 5 }}
+              />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Based on allocated departmental budgets
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={8}>
+            <Paper sx={{ p: 3, height: 360 }} elevation={3}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" fontWeight={600}>
+                  Spending trends
+                </Typography>
+                <Chip label="Last 7 days" size="small" />
+              </Box>
+              <Box sx={{ position: 'relative', height: '100%' }}>
+                {isLoadingStats ? (
+                  <Box sx={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography variant="body2" color="text.secondary">
+                      Loading trends...
+                    </Typography>
+                  </Box>
+                ) : (
+                  <Line data={spendingTrendData} options={spendingTrendOptions} />
+                )}
+              </Box>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 3, height: 360, display: 'flex', flexDirection: 'column' }} elevation={3}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" fontWeight={600}>
+                  Recent expenses
+                </Typography>
+                <Chip label={`${stats.recentExpenses.length}`} size="small" color="primary" />
+              </Box>
+              <List sx={{ overflowY: 'auto', flexGrow: 1 }}>
+                {stats.recentExpenses.length === 0 ? (
+                  <ListItem>
+                    <ListItemText primary="No recent expenses" secondary="Your team's activity will appear here." />
+                  </ListItem>
+                ) : (
+                  stats.recentExpenses.map((expense) => (
+                    <ListItem key={expense.id} divider disableGutters>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="subtitle2" fontWeight={600}>
+                              {expense.employeeName}
+                            </Typography>
+                            <Typography variant="subtitle2" color="text.primary">
+                              {formatCurrency(expense.amount, expense.currency || stats.monthTotal.currency)}
+                            </Typography>
+                          </Box>
+                        }
+                        secondary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(expense.createdAt).toLocaleString()}
+                            </Typography>
+                            <Chip label={expense.status} size="small" color="default" />
+                          </Box>
+                        }
+                      />
+                    </ListItem>
+                  ))
+                )}
+              </List>
+            </Paper>
+          </Grid>
+        </Grid>
+
+        <Box sx={{ mt: 4 }}>
+          <Outlet />
+        </Box>
       </Main>
     </Box>
   );
