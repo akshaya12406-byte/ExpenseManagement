@@ -14,7 +14,7 @@ const {
   removeFileQuietly,
 } = require('../utils/fileStorage');
 
-const router = express.Router();
+const router = express.Router({ mergeParams: true });
 const upload = multer({ storage: multer.memoryStorage() });
 
 ensureDirectories();

@@ -27,6 +27,7 @@ import {
 import Grid from '@mui/material/Grid';
 import {
   DashboardCustomizeRounded,
+  InsightsRounded,
   LogoutRounded,
   MenuRounded,
   NotificationsRounded,
@@ -34,7 +35,6 @@ import {
   PeopleAltRounded,
   ReceiptLongRounded,
   SettingsRounded,
-  TaskRounded,
 } from '@mui/icons-material';
 import { styled, useTheme } from '@mui/material/styles';
 import { io } from 'socket.io-client';
@@ -54,21 +54,20 @@ import apiClient from '../api/client';
 
 const DRAWER_WIDTH = 260;
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ChartTooltip, Legend);
 
 const roleMenus = {
   admin: [
     { label: 'Dashboard', icon: <DashboardCustomizeRounded />, path: '/dashboard' },
-    { label: 'Manage Users', icon: <PeopleAltRounded />, path: '/admin/users' },
-    { label: 'Expenses', icon: <ReceiptLongRounded />, path: '/expenses' },
-    { label: 'Approvals', icon: <TaskRounded />, path: '/admin/approvals' },
-    { label: 'Settings', icon: <SettingsRounded />, path: '/admin/settings' },
+    { label: 'User Management', icon: <PeopleAltRounded />, path: '/admin' },
+    { label: 'Analytics', icon: <InsightsRounded />, path: '/analytics' },
+    { label: 'Company Settings', icon: <SettingsRounded />, path: '/settings' },
+    { label: 'Submit Expense', icon: <PaidRounded />, path: '/submit-expense' },
   ],
   manager: [
     { label: 'Dashboard', icon: <DashboardCustomizeRounded />, path: '/dashboard' },
-    { label: 'Team Expenses', icon: <ReceiptLongRounded />, path: '/expenses/team' },
-    { label: 'Approvals', icon: <TaskRounded />, path: '/manager/approvals' },
-    { label: 'Reports', icon: <PaidRounded />, path: '/manager/reports' },
+    { label: 'Team Expenses', icon: <ReceiptLongRounded />, path: '/expenses' },
+    { label: 'Analytics', icon: <InsightsRounded />, path: '/analytics' },
+    { label: 'Submit Expense', icon: <PaidRounded />, path: '/submit-expense' },
   ],
   employee: [
     { label: 'Dashboard', icon: <DashboardCustomizeRounded />, path: '/dashboard' },
@@ -96,7 +95,7 @@ const DashboardPage = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
-  const { user, logout, sessionExpired } = useAuth();
+  const { user, token, logout, sessionExpired } = useAuth();
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -118,9 +117,20 @@ const DashboardPage = () => {
   const menuItems = useMemo(() => roleMenus[user?.role] || roleMenus.employee, [user?.role]);
   const apiBase = useMemo(() => process.env.REACT_APP_API_URL || 'http://localhost:4000/api', []);
 
-  const loadDashboardSummary = useCallback(async ({ signal }) => {
-    return apiClient.fetchJson(`${apiBase}/dashboard/summary`, { signal }, { ttl: 30000 });
-  }, [apiBase]);
+  const loadDashboardSummary = useCallback(
+    async ({ signal }) => {
+      const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+      return apiClient.fetchJson(
+        `${apiBase}/dashboard/summary`,
+        {
+          signal,
+          headers,
+        },
+        { ttl: 30000 },
+      );
+    },
+    [apiBase, token],
+  );
 
   useEffect(() => {
     let active = true;

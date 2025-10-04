@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 
 import theme from './theme';
 import ErrorBoundary from './components/ErrorBoundary';
+import { ProtectedRoute } from './context/AuthContext';
 
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const SignupPage = lazy(() => import('./pages/SignupPage'));
@@ -43,10 +44,38 @@ function App() {
                 <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/signup" element={<SignupPage />} />
-                <Route path="/dashboard" element={<DashboardPage />} />
-                <Route path="/expenses" element={<ExpensesPage />} />
-                <Route path="/submit-expense" element={<SubmitExpensePage />} />
-                <Route path="/admin" element={<AdminPage />} />
+                <Route
+                  path="/dashboard"
+                  element={(
+                    <ProtectedRoute>
+                      <DashboardPage />
+                    </ProtectedRoute>
+                  )}
+                />
+                <Route
+                  path="/expenses"
+                  element={(
+                    <ProtectedRoute>
+                      <ExpensesPage />
+                    </ProtectedRoute>
+                  )}
+                />
+                <Route
+                  path="/submit-expense"
+                  element={(
+                    <ProtectedRoute>
+                      <SubmitExpensePage />
+                    </ProtectedRoute>
+                  )}
+                />
+                <Route
+                  path="/admin"
+                  element={(
+                    <ProtectedRoute roles={[ 'admin' ]}>
+                      <AdminPage />
+                    </ProtectedRoute>
+                  )}
+                />
                 <Route path="/error" element={<ErrorPage />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>

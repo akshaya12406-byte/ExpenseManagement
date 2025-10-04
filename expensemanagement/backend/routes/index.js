@@ -7,6 +7,7 @@ const userRoutes = require('./users');
 const companyRoutes = require('./company');
 const analyticsRoutes = require('./analytics');
 const currencyRoutes = require('./currency');
+const dashboardRoutes = require('./dashboard');
 
 const router = express.Router();
 
@@ -15,8 +16,9 @@ router.get('/health', (req, res) => {
 });
 
 router.use('/auth', authRoutes);
-router.use('/expenses', receiptsRoutes);
+router.use('/dashboard', dashboardRoutes);
 router.use('/expenses', expenseRoutes);
+router.use('/expenses/:expenseId/receipts', receiptsRoutes);
 router.use('/users', userRoutes);
 router.use('/company', companyRoutes);
 router.use('/analytics', analyticsRoutes);
