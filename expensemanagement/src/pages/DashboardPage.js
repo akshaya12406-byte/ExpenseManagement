@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState, useCallback } from 'react';
+import { memo, useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -113,6 +113,7 @@ const DashboardPage = () => {
     trend: [],
   });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const trendChartRef = useRef(null);
 
   const menuItems = useMemo(() => roleMenus[user?.role] || roleMenus.employee, [user?.role]);
   const apiBase = useMemo(() => process.env.REACT_APP_API_URL || 'http://localhost:4000/api', []);
@@ -301,6 +302,13 @@ const DashboardPage = () => {
       navigate('/login', { replace: true, state: { reason: 'session_expired' } });
     }
   }, [sessionExpired, navigate]);
+
+  useEffect(() => () => {
+    if (trendChartRef.current) {
+      trendChartRef.current.destroy();
+      trendChartRef.current = null;
+    }
+  }, []);
 
   const handleDrawerToggle = () => {
     setMobileOpen((prev) => !prev);
@@ -529,7 +537,7 @@ const DashboardPage = () => {
                     <CircularProgress />
                   </Box>
                 ) : (
-                  <Line data={spendingTrendData} options={spendingTrendOptions} />
+                  <Line ref={trendChartRef} data={spendingTrendData} options={spendingTrendOptions} redraw />
                 )}
               </Box>
             </Paper>
