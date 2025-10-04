@@ -44,6 +44,21 @@ import TrendChart from '../components/TrendChart';
 
 const DRAWER_WIDTH = 260;
 
+const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(({ theme }) => ({
+  flexGrow: 1,
+  padding: theme.spacing(3),
+  backgroundColor: theme.palette.background.default,
+  minHeight: '100vh',
+}));
+
+const DrawerHeader = styled('div')(({ theme }) => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  padding: theme.spacing(2, 3),
+  ...theme.mixins.toolbar,
+}));
+
 const roleMenus = {
   admin: [
     { label: 'Dashboard', icon: <DashboardCustomizeRounded />, path: '/dashboard' },
@@ -69,7 +84,7 @@ const DashboardPage = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
-  const [sessionExpired, setSessionExpired] = useState(false);
+  const { user, token, logout, sessionExpired } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [stats, setStats] = useState({
@@ -202,7 +217,7 @@ const DashboardPage = () => {
     const client = io(process.env.REACT_APP_SOCKET_URL || 'http://localhost:4000', {
       transports: ['websocket'],
       auth: {
-        token: storedAuth?.token || storedAuth?.accessToken || null,
+        token: token || storedAuth?.token || storedAuth?.accessToken || null,
       },
     });
 
@@ -267,7 +282,7 @@ const DashboardPage = () => {
     return () => {
       client.disconnect();
     };
-  }, [loadDashboardSummary]);
+  }, [loadDashboardSummary, token]);
 
   useEffect(() => {
     if (sessionExpired) {
