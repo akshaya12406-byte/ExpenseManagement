@@ -14,6 +14,111 @@ const {
 
 const router = express.Router();
 
+router.get('/', authMiddleware(), async (req, res) => {
+  try {
+    const { company, sub: userId, role } = req.user;
+
+    const match = { company };
+    if (role !== 'admin' && role !== 'manager') {
+      match.employee = userId;
+    }
+
+    const expenses = await Expense.find(match)
+      .sort({ expenseDate: -1, createdAt: -1 })
+      .populate('employee', 'profile.firstName profile.lastName email')
+      .lean();
+
+    res.json({
+      expenses: expenses.map((expense) => ({
+        id: expense._id,
+        employeeName:
+          expense.employee?.profile?.firstName || expense.employee?.email || 'Team member',
+        employeeEmail: expense.employee?.email,
+        amount: expense.amount,
+        currency: expense.currency,
+        category: expense.category,
+        status: expense.status,
+        description: expense.description,
+        expenseDate: expense.expenseDate,
+        createdAt: expense.createdAt,
+      })),
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.message || 'Failed to load expenses' });
+  }
+});
+
+router.post('/', authMiddleware(), async (req, res) => {
+  try {
+    const { company, sub: userId } = req.user;
+    const {
+      amount,
+      currency,
+      category,
+      description,
+      expenseDate,
+      convertedAmount,
+      conversionRate,
+      vendor,
+      receiptFile,
+      ocrText,
+      projectCode,
+      customFields,
+    } = req.body || {};
+
+    if (!amount || !currency || !category || !expenseDate) {
+      return res.status(400).json({
+        message: 'Amount, currency, category, and expenseDate are required.',
+      });
+    }
+
+    const expense = await Expense.create({
+      company,
+      employee: userId,
+      amount,
+      currency,
+      category,
+      description,
+      expenseDate,
+      merchant: vendor,
+      projectCode,
+      conversion: convertedAmount
+        ? {
+            baseCurrency: currency,
+            baseAmount: amount,
+            convertedCurrency: currency,
+            convertedAmount,
+            rate: conversionRate || 1,
+          }
+        : undefined,
+      customFields,
+      receipts: receiptFile
+        ? [
+            {
+              _id: receiptFile.id || receiptFile._id || Date.now().toString(),
+              originalName: receiptFile.originalName || receiptFile.name || 'receipt',
+              mimeType: receiptFile.mimeType || receiptFile.type || 'application/octet-stream',
+              size: receiptFile.size || 0,
+              extension: receiptFile.extension || receiptFile.originalName?.split('.').pop() || 'jpg',
+              storagePath: receiptFile.storagePath || receiptFile.url || '',
+              thumbnailPath: receiptFile.thumbnailPath,
+              uploadedBy: userId,
+            },
+          ]
+        : [],
+    });
+
+    res.status(201).json({
+      expenseId: expense._id,
+      status: expense.status,
+      submittedAt: expense.submittedAt,
+      ocrText,
+    });
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.message || 'Failed to submit expense' });
+  }
+});
+
 router.post('/:expenseId/workflow', authMiddleware(), async (req, res) => {
   try {
     const expense = await buildApprovalWorkflow(req.params.expenseId);

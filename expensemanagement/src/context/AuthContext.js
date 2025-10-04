@@ -178,7 +178,7 @@ export const useAuth = () => {
 };
 
 export const ProtectedRoute = ({ children, roles, redirectTo = '/login' }) => {
-  const { isAuthenticated, user, hasRole, isInitializing, sessionExpired } = useAuth();
+  const { isAuthenticated, hasRole, isInitializing, sessionExpired } = useAuth();
   const location = useLocation();
 
   if (isInitializing) {

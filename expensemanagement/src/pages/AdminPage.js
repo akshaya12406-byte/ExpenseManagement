@@ -82,17 +82,17 @@ const AdminPage = () => {
     fetchUsers();
   }, [fetchUsers]);
 
-  const openCreateModal = () => {
+  const openCreateModal = useCallback(() => {
     setModalState({ open: true, user: null });
-  };
+  }, []);
 
-  const openEditModal = (user) => {
+  const openEditModal = useCallback((user) => {
     setModalState({ open: true, user });
-  };
+  }, []);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setModalState({ open: false, user: null });
-  };
+  }, []);
 
   const handleSaveUser = async (event) => {
     event.preventDefault();
@@ -141,13 +141,13 @@ const AdminPage = () => {
     }
   };
 
-  const openConfirmDialog = (action, payload) => {
+  const openConfirmDialog = useCallback((action, payload) => {
     setConfirmState({ open: true, action, payload });
-  };
+  }, []);
 
-  const closeConfirmDialog = () => {
+  const closeConfirmDialog = useCallback(() => {
     setConfirmState({ open: false, action: null, payload: null });
-  };
+  }, []);
 
   const executeConfirmAction = async () => {
     if (!confirmState.action) return;
@@ -164,23 +164,26 @@ const AdminPage = () => {
     closeConfirmDialog();
   };
 
-  const openActivityDialog = async (user) => {
-    setActivityState({ open: true, loading: true, user, logs: [] });
-    try {
-      const { data } = await axiosClient.get(`/users/${user._id}/activity`);
-      setActivityState((prev) => ({ ...prev, loading: false, logs: data.activity || [] }));
-    } catch (activityError) {
-      setActivityState((prev) => ({
-        ...prev,
-        loading: false,
-        error: activityError.response?.data?.message || 'Failed to load activity',
-      }));
-    }
-  };
+  const openActivityDialog = useCallback(
+    async (user) => {
+      setActivityState({ open: true, loading: true, user, logs: [] });
+      try {
+        const { data } = await axiosClient.get(`/users/${user._id}/activity`);
+        setActivityState((prev) => ({ ...prev, loading: false, logs: data.activity || [] }));
+      } catch (activityError) {
+        setActivityState((prev) => ({
+          ...prev,
+          loading: false,
+          error: activityError.response?.data?.message || 'Failed to load activity',
+        }));
+      }
+    },
+    [axiosClient],
+  );
 
-  const closeActivityDialog = () => {
+  const closeActivityDialog = useCallback(() => {
     setActivityState({ open: false, loading: false, user: null, logs: [], error: null });
-  };
+  }, []);
 
   const exportUsers = async () => {
     try {
@@ -279,7 +282,7 @@ const AdminPage = () => {
         ),
       },
     ],
-    [],
+    [openActivityDialog, openConfirmDialog, openEditModal],
   );
 
   return (

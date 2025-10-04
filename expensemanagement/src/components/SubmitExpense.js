@@ -84,7 +84,6 @@ const SubmitExpense = ({
 
   const amount = watch('amount');
   const currency = watch('currency');
-  const selectedCategory = watch('category');
 
   const rate = useMemo(() => {
     if (currency === baseCurrency) return 1;
@@ -247,7 +246,7 @@ const SubmitExpense = ({
       amountValue = parseFloat(normalized);
     }
 
-    const datePattern = /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})|(\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2})/;
+    const datePattern = /(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})|(\d{4}[/-]\d{1,2}[/-]\d{1,2})/;
     const dateMatch = text.match(datePattern);
     let isoDate = null;
     const parseDateString = (value) => {
@@ -276,19 +275,22 @@ const SubmitExpense = ({
   useEffect(() => {
     if (activeStep !== 2) return;
     if (!receiptPreview || hasProcessedOCRRef.current || preprocessState.status === 'processing') return;
+    if (manualOverride) return;
 
     const processOCR = async () => {
       setOcrState({ status: 'processing', text: '', error: null, warning: null });
       setOcrProgress(0);
       try {
-        const { createWorker } = await import('tesseract.js');
-        const worker = await createWorker({
-          logger: (m) => {
-            if (m.status === 'recognizing text') {
-              setOcrProgress(Math.round(m.progress * 100));
-            }
-          },
-        });
+        const { createWorker, setLogger } = await import('tesseract.js');
+
+        const progressLogger = (m) => {
+          if (m.status === 'recognizing text') {
+            setOcrProgress(Math.round(m.progress * 100));
+          }
+        };
+
+        setLogger(progressLogger);
+        const worker = await createWorker();
 
         await worker.loadLanguage('eng');
         await worker.initialize('eng');
@@ -296,6 +298,7 @@ const SubmitExpense = ({
         const sourceUrl = processedReceipt?.url || receiptPreview.url;
         const { data } = await worker.recognize(sourceUrl);
         await worker.terminate();
+        setLogger(() => {});
 
         const text = data?.text?.trim() || '';
         const warning = data?.confidence < 60 ? 'Low confidence detected. Please verify the extracted details.' : null;
@@ -312,7 +315,7 @@ const SubmitExpense = ({
     };
 
     processOCR();
-  }, [activeStep, extractFieldsFromText, preprocessState.status, processedReceipt, receiptPreview, setValue]);
+  }, [activeStep, extractFieldsFromText, manualOverride, preprocessState.status, processedReceipt, receiptPreview, setValue]);
 
   useEffect(() => {
     if (!extractedFields) return;

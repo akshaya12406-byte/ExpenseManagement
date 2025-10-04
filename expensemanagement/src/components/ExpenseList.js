@@ -1,15 +1,12 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import {
-  Box,
   Button,
   Chip,
-  Divider,
   FormControl,
   Grid,
   InputLabel,
   MenuItem,
-  OutlinedInput,
   Paper,
   Select,
   Stack,
@@ -17,7 +14,7 @@ import {
   Typography,
 } from '@mui/material';
 import { DataGrid, gridClasses } from '@mui/x-data-grid';
-import { styled, useTheme } from '@mui/material/styles';
+import { styled } from '@mui/material/styles';
 import { format } from 'date-fns';
 import { saveAs } from 'file-saver';
 import { utils, write } from 'xlsx';
@@ -63,7 +60,6 @@ const defaultFilters = {
 const defaultPageSizeOptions = [10, 25, 50, 100];
 
 const ExpenseList = ({ expenses = [], isLoading = false, onFiltersChange, categories = [] }) => {
-  const theme = useTheme();
   const [filters, setFilters] = useState(defaultFilters);
   const [pageSize, setPageSize] = useState(defaultPageSizeOptions[0]);
 
