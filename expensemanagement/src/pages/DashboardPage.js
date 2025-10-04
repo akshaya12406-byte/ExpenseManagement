@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { memo, useEffect, useMemo, useState, useCallback } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -38,22 +38,11 @@ import {
 } from '@mui/icons-material';
 import { styled, useTheme } from '@mui/material/styles';
 import { io } from 'socket.io-client';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip as ChartTooltip,
-  Legend,
-} from 'chart.js';
-
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../api/client';
+import TrendChart from '../components/TrendChart';
 
 const DRAWER_WIDTH = 260;
-
 
 const roleMenus = {
   admin: [
@@ -76,27 +65,11 @@ const roleMenus = {
   ],
 };
 
-const Main = styled('main', { shouldForwardProp: (prop) => prop !== 'open' })(({ theme }) => ({
-  flexGrow: 1,
-  padding: theme.spacing(3),
-  background: theme.palette.background.default,
-  minHeight: '100vh',
-}));
-
-const DrawerHeader = styled('div')(({ theme }) => ({
-  ...theme.mixins.toolbar,
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  padding: theme.spacing(0, 2),
-}));
-
 const DashboardPage = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const navigate = useNavigate();
-  const { user, token, logout, sessionExpired } = useAuth();
-
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [stats, setStats] = useState({
@@ -113,7 +86,6 @@ const DashboardPage = () => {
     trend: [],
   });
   const [isLoadingStats, setIsLoadingStats] = useState(true);
-  const trendChartRef = useRef(null);
 
   const menuItems = useMemo(() => roleMenus[user?.role] || roleMenus.employee, [user?.role]);
   const apiBase = useMemo(() => process.env.REACT_APP_API_URL || 'http://localhost:4000/api', []);
@@ -303,13 +275,6 @@ const DashboardPage = () => {
     }
   }, [sessionExpired, navigate]);
 
-  useEffect(() => () => {
-    if (trendChartRef.current) {
-      trendChartRef.current.destroy();
-      trendChartRef.current = null;
-    }
-  }, []);
-
   const handleDrawerToggle = () => {
     setMobileOpen((prev) => !prev);
   };
@@ -357,64 +322,57 @@ const DashboardPage = () => {
   const formatCurrency = (amount, currency) =>
     new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount || 0);
 
-  const spendingTrendData = useMemo(
-    () => ({
-      labels: stats.trend.map((point) => point.label),
-      datasets: [
-        {
-          id: 'spend-trend',
-          label: 'Spend',
-          data: stats.trend.map((point) => point.amount),
-          borderColor: theme.palette.primary.main,
-          backgroundColor: theme.palette.primary.light,
-          pointBackgroundColor: theme.palette.primary.main,
-          fill: false,
-          pointRadius: 4,
-          tension: 0.3,
-        },
-      ],
-    }),
-    [stats.trend, theme.palette.primary.main, theme.palette.primary.light],
-  );
+  const primaryMain = theme.palette.primary.main;
+  const primaryLight = theme.palette.primary.light;
+  const textSecondary = theme.palette.text.secondary;
+  const dividerColor = theme.palette.divider;
 
-  const spendingTrendOptions = useMemo(
+  const trendChartConfig = useMemo(
     () => ({
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
-        mode: 'index',
-        intersect: false,
+      type: 'line',
+      data: {
+        labels: stats.trend.map((point) => point.label),
+        datasets: [
+          {
+            label: 'Spend',
+            data: stats.trend.map((point) => point.amount),
+            borderColor: primaryMain,
+            backgroundColor: primaryLight,
+            pointBackgroundColor: primaryMain,
+            pointRadius: 4,
+            tension: 0.3,
+            fill: false,
+          },
+        ],
       },
-      plugins: {
-        legend: {
-          display: false,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: {
+          mode: 'index',
+          intersect: false,
         },
-        tooltip: {
-          callbacks: {
-            label: (context) => `${formatCurrency(context.parsed.y, stats.monthTotal.currency)}`,
-          },
-        },
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: theme.palette.text.secondary,
-          },
-          grid: {
-            display: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (context) => `${formatCurrency(context.parsed.y, stats.monthTotal.currency)}`,
+            },
           },
         },
-        y: {
-          ticks: {
-            color: theme.palette.text.secondary,
+        scales: {
+          x: {
+            ticks: { color: textSecondary },
+            grid: { display: false },
           },
-          grid: {
-            color: theme.palette.divider,
+          y: {
+            ticks: { color: textSecondary },
+            grid: { color: dividerColor },
           },
         },
       },
     }),
-    [stats.monthTotal.currency, theme.palette.divider, theme.palette.text.secondary],
+    [stats.trend, stats.monthTotal.currency, primaryMain, primaryLight, textSecondary, dividerColor],
   );
 
   return (
@@ -546,13 +504,7 @@ const DashboardPage = () => {
                     <CircularProgress />
                   </Box>
                 ) : (
-                  <Line
-                    key={spendingTrendData.labels.join('|')}
-                    ref={trendChartRef}
-                    data={spendingTrendData}
-                    options={spendingTrendOptions}
-                    datasetIdKey="id"
-                  />
+                  <TrendChart config={trendChartConfig} />
                 )}
               </Box>
             </Paper>
