@@ -22,6 +22,15 @@ const preferenceSchema = new mongoose.Schema(
     defaultCurrency: { type: String, default: 'USD' },
     weeklyReportDay: { type: String, default: 'Friday' },
     dashboardWidgets: [{ type: String }],
+    notificationChannels: {
+      type: [String],
+      default: ['socket', 'email'],
+    },
+    notificationTypes: {
+      type: [String],
+      default: ['approval_required', 'approval_status_changed', 'expense_submitted'],
+    },
+    muteUntil: { type: Date },
   },
   { _id: false },
 );

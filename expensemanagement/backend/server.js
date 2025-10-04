@@ -12,6 +12,7 @@ const socketIo = require('socket.io');
 const routes = require('./routes');
 const authMiddleware = require('./middleware/auth');
 const { connectDatabase } = require('./config/database');
+const { registerSocketServer } = require('./services/socketRegistry');
 
 const PORT = process.env.PORT || 4000;
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
@@ -66,13 +67,7 @@ app.use((err, req, res, next) => {
   res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
 });
 
-io.on('connection', (socket) => {
-  console.log('🔌 Client connected', socket.id);
-
-  socket.on('disconnect', (reason) => {
-    console.log('🔌 Client disconnected', socket.id, reason);
-  });
-});
+registerSocketServer(io);
 
 const startServer = async () => {
   try {
