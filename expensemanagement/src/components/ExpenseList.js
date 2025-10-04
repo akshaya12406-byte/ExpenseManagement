@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import PropTypes from 'prop-types';
 import {
   Box,
@@ -66,23 +66,19 @@ const ExpenseList = ({ expenses = [], isLoading = false, onFiltersChange, catego
   const theme = useTheme();
   const [filters, setFilters] = useState(defaultFilters);
   const [pageSize, setPageSize] = useState(defaultPageSizeOptions[0]);
-  const [filteredRows, setFilteredRows] = useState(expenses);
 
-  useEffect(() => {
-    if (onFiltersChange) {
-      onFiltersChange(filters);
-    }
-  }, [filters, onFiltersChange]);
+  const normalizedCategories = useMemo(() => categories.filter(Boolean), [categories]);
 
-  useEffect(() => {
+  const filteredRows = useMemo(() => {
     const { status, category, startDate, endDate, search } = filters;
 
-    const filtered = expenses.filter((expense) => {
+    return expenses.filter((expense) => {
       const matchesStatus = status === 'all' || expense.status === status;
       const matchesCategory = category === 'all' || expense.category === category;
       const matchesDateRange = (() => {
         if (!startDate && !endDate) return true;
         const expenseDate = new Date(expense.expenseDate || expense.createdAt || expense.date);
+        if (Number.isNaN(expenseDate.getTime())) return false;
         if (startDate && expenseDate < new Date(startDate)) return false;
         if (endDate && expenseDate > new Date(endDate)) return false;
         return true;
@@ -104,9 +100,17 @@ const ExpenseList = ({ expenses = [], isLoading = false, onFiltersChange, catego
 
       return matchesStatus && matchesCategory && matchesDateRange && matchesSearch;
     });
-
-    setFilteredRows(filtered);
   }, [expenses, filters]);
+
+  const handleFiltersChanged = useCallback((nextFilters) => {
+    if (onFiltersChange) {
+      onFiltersChange(nextFilters);
+    }
+  }, [onFiltersChange]);
+
+  useEffect(() => {
+    handleFiltersChanged(filters);
+  }, [filters, handleFiltersChanged]);
 
   const statusBadge = (params) => {
     const status = params.value;
@@ -115,86 +119,83 @@ const ExpenseList = ({ expenses = [], isLoading = false, onFiltersChange, catego
     return <Chip label={status.replace('_', ' ')} color={color} size="small" variant="filled" />;
   };
 
-  const columns = useMemo(
-    () => [
-      {
-        field: 'expenseDate',
-        headerName: 'Date',
-        flex: 1,
-        minWidth: 140,
-        valueGetter: (params) => params.value || params.row.createdAt,
-        valueFormatter: (params) =>
-          params.value ? format(new Date(params.value), 'MMM dd, yyyy') : 'Not set',
-        sortComparator: (value1, value2) => new Date(value1) - new Date(value2),
-      },
-      {
-        field: 'employeeName',
-        headerName: 'Employee',
-        flex: 1.2,
-        minWidth: 160,
-        valueGetter: (params) => params.row.employeeName || params.row.employee?.name,
-      },
-      {
-        field: 'category',
-        headerName: 'Category',
-        flex: 1,
-        minWidth: 140,
-      },
-      {
-        field: 'amount',
-        headerName: 'Amount',
-        flex: 1,
-        minWidth: 140,
-        type: 'number',
-        valueFormatter: (params) =>
-          new Intl.NumberFormat(undefined, {
-            style: 'currency',
-            currency: params.row.currency || 'USD',
-          }).format(Number(params.value) || 0),
-      },
-      {
-        field: 'status',
-        headerName: 'Status',
-        flex: 1,
-        minWidth: 140,
-        renderCell: statusBadge,
-        sortable: true,
-      },
-      {
-        field: 'description',
-        headerName: 'Description',
-        flex: 1.5,
-        minWidth: 200,
-      },
-    ],
-    [],
-  );
+  const columns = useMemo(() => [
+    {
+      field: 'expenseDate',
+      headerName: 'Date',
+      flex: 1,
+      minWidth: 140,
+      valueGetter: (params) => params.value || params.row.createdAt,
+      valueFormatter: (params) =>
+        params.value ? format(new Date(params.value), 'MMM dd, yyyy') : 'Not set',
+      sortComparator: (value1, value2) => new Date(value1) - new Date(value2),
+    },
+    {
+      field: 'employeeName',
+      headerName: 'Employee',
+      flex: 1.2,
+      minWidth: 160,
+      valueGetter: (params) => params.row.employeeName || params.row.employee?.name,
+    },
+    {
+      field: 'category',
+      headerName: 'Category',
+      flex: 1,
+      minWidth: 140,
+    },
+    {
+      field: 'amount',
+      headerName: 'Amount',
+      flex: 1,
+      minWidth: 140,
+      type: 'number',
+      valueFormatter: (params) =>
+        new Intl.NumberFormat(undefined, {
+          style: 'currency',
+          currency: params.row.currency || 'USD',
+        }).format(Number(params.value) || 0),
+    },
+    {
+      field: 'status',
+      headerName: 'Status',
+      flex: 1,
+      minWidth: 140,
+      renderCell: statusBadge,
+      sortable: true,
+    },
+    {
+      field: 'description',
+      headerName: 'Description',
+      flex: 1.5,
+      minWidth: 200,
+    },
+  ], []);
 
-  const handleFilterChange = (name) => (event) => {
+  const handleFilterChange = useCallback((name) => (event) => {
     const value = event.target.value;
     setFilters((prev) => ({
       ...prev,
       [name]: value === 'all' ? 'all' : value,
     }));
-  };
+  }, []);
 
-  const handleDateChange = (name) => (event) => {
+  const handleDateChange = useCallback((name) => (event) => {
     setFilters((prev) => ({
       ...prev,
       [name]: event.target.value || null,
     }));
-  };
+  }, []);
 
-  const handleSearchChange = (event) => {
+  const handleSearchChange = useCallback((event) => {
     setFilters((prev) => ({
       ...prev,
       search: event.target.value,
     }));
-  };
+  }, []);
 
-  const resetFilters = () => {
+  const resetFilters = useCallback(() => {
     setFilters(defaultFilters);
-  };
+  }, []);
 
   const exportCSV = () => {
     const worksheet = utils.json_to_sheet(filteredRows);
@@ -262,7 +263,7 @@ const ExpenseList = ({ expenses = [], isLoading = false, onFiltersChange, catego
               <InputLabel>Category</InputLabel>
               <Select value={filters.category} label="Category" onChange={handleFilterChange('category')}>
                 <MenuItem value="all">All categories</MenuItem>
-                {categories.map((category) => (
+                {normalizedCategories.map((category) => (
                   <MenuItem key={category} value={category}>
                     {category}
                   </MenuItem>
@@ -344,4 +345,4 @@ ExpenseList.propTypes = {
   categories: PropTypes.arrayOf(PropTypes.string),
 };
 
-export default ExpenseList;
+export default memo(ExpenseList);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useState, useCallback } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -49,6 +49,7 @@ import {
 } from 'chart.js';
 
 import { useAuth } from '../context/AuthContext';
+import apiClient from '../api/client';
 
 const DRAWER_WIDTH = 260;
 
@@ -116,6 +117,10 @@ const DashboardPage = () => {
   const menuItems = useMemo(() => roleMenus[user?.role] || roleMenus.employee, [user?.role]);
   const apiBase = useMemo(() => process.env.REACT_APP_API_URL || 'http://localhost:4000/api', []);
 
+  const loadDashboardSummary = useCallback(async ({ signal }) => {
+    return apiClient.fetchJson(`${apiBase}/dashboard/summary`, { signal }, { ttl: 30000 });
+  }, [apiBase]);
+
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
@@ -161,16 +166,7 @@ const DashboardPage = () => {
     const fetchDashboardData = async () => {
       setIsLoadingStats(true);
       try {
-        const response = await fetch(`${apiBase}/dashboard/summary`, {
-          credentials: 'include',
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to load dashboard data');
-        }
-
-        const data = await response.json();
+        const data = await loadDashboardSummary({ signal: controller.signal });
 
         if (!active) return;
 
@@ -206,7 +202,7 @@ const DashboardPage = () => {
       active = false;
       controller.abort();
     };
-  }, [apiBase, user?.role]);
+  }, [apiBase, loadDashboardSummary, user?.role]);
 
   useEffect(() => {
     const storedAuth = (() => {
@@ -580,4 +576,4 @@ const DashboardPage = () => {
   );
 };
 
-export default DashboardPage;
+export default memo(DashboardPage);
